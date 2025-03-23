@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ocultar scrollbar pero mantener funcionalidad */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE y Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari y Opera */
+}
+
+/* Tamaños de fuente más grandes para mejor legibilidad en móviles */
+html {
+  font-size: 16px;
+}
+
+/* Estilo para los inputs */
+input:focus, select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Mejor contraste para los textos */
+.text-gray-500 {
+  color: #64748b;
+}
+
+.text-gray-700 {
+  color: #334155;
+}
+
+/* Animaciones suaves */
+button {
+  transition: all 0.2s ease;
+}
+
+/* Estilos para los estados de prioridad */
+.prioridad-alta {
+  @apply bg-red-50 border-l-4 border-red-500;
+}
+
+.prioridad-media {
+  @apply bg-yellow-50 border-l-4 border-yellow-500;
+}
+
+.prioridad-baja {
+  @apply bg-green-50 border-l-4 border-green-500;
+}
+
+/* Mejor espaciado para elementos de formulario */
+input, select, button {
+  @apply rounded-lg;
+}
+
+/* Hacer que los botones sean más fáciles de tocar en móviles */
+button, 
+[role="button"] {
+  @apply min-h-[44px];
+}
