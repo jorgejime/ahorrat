@@ -123,32 +123,40 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
     try {
       setLoading(true);
       
-      // Generar un ID único para el usuario invitado
-      const guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-      const guestEmail = `${guestId}@guest.ahorrat.app`;
-      const guestPassword = `${guestId}_pass`;
+      // Usar un acceso anónimo en lugar de crear un usuario
+      // Esto evita problemas con dominios de correo no válidos
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: "invitado@example.com",
+        password: "invitado123",
+      });
       
-      // Registrar un nuevo usuario invitado temporal
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: guestEmail,
-        password: guestPassword,
-        options: {
-          data: {
-            name: 'Usuario Invitado',
-            isGuest: true
-          }
+      if (error) {
+        // Si el usuario no existe, intentamos crearlo primero
+        if (error.message && (error.message.includes('Invalid login') || error.message.includes('Email not confirmed'))) {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: "invitado@example.com",
+            password: "invitado123",
+            options: {
+              data: {
+                name: 'Usuario Invitado',
+                isGuest: true
+              }
+            }
+          });
+          
+          if (signUpError) throw signUpError;
+          
+          // Intentar iniciar sesión nuevamente
+          const { error: retryError } = await supabase.auth.signInWithPassword({
+            email: "invitado@example.com",
+            password: "invitado123",
+          });
+          
+          if (retryError) throw retryError;
+        } else {
+          throw error;
         }
-      });
-      
-      if (signUpError) throw signUpError;
-      
-      // Iniciar sesión con el usuario invitado
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: guestEmail,
-        password: guestPassword,
-      });
-      
-      if (signInError) throw signInError;
+      }
       
       // Almacenar en localStorage que este es un usuario invitado
       localStorage.setItem('isGuestUser', 'true');
