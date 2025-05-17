@@ -7,6 +7,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase URL o clave anónima falta en las variables de entorno');
 }
 
+// Función para verificar la conexión con Supabase
+export const testSupabaseConnection = async () => {
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseAnonKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnonKey || '',
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('Error al probar la conexión con Supabase:', error);
+    return false;
+  }
+};
+
 export const supabase = createClient(
   supabaseUrl || '',
   supabaseAnonKey || '',
@@ -23,7 +42,7 @@ export const supabase = createClient(
         return fetch(url, { 
           ...options, 
           // Establecer un timeout para evitar que las peticiones se queden colgadas
-          signal: AbortSignal.timeout(30000) 
+          signal: AbortSignal.timeout(15000) 
         });
       }
     }

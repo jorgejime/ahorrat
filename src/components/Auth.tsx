@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { Mail, Lock, UserPlus, LogIn, AlertCircle, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { supabase, testSupabaseConnection } from '../lib/supabase';
+import { Mail, Lock, UserPlus, LogIn, AlertCircle, Info, RefreshCw, WifiOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface AuthProps {
@@ -14,12 +14,63 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [confirmationPending, setConfirmationPending] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(true);
+  const [connectionActive, setConnectionActive] = useState(true);
+
+  // Comprobar la conexión con Supabase al cargar el componente
+  useEffect(() => {
+    const checkConnection = async () => {
+      setCheckingConnection(true);
+      try {
+        const isConnected = await testSupabaseConnection();
+        setConnectionActive(isConnected);
+        setConnectionError(!isConnected);
+      } catch (error) {
+        console.error('Error al verificar la conexión:', error);
+        setConnectionActive(false);
+        setConnectionError(true);
+      } finally {
+        setCheckingConnection(false);
+      }
+    };
+
+    checkConnection();
+  }, []);
+
+  // Función para reintentar la conexión
+  const retryConnection = async () => {
+    setCheckingConnection(true);
+    try {
+      const isConnected = await testSupabaseConnection();
+      setConnectionActive(isConnected);
+      setConnectionError(!isConnected);
+      
+      if (isConnected) {
+        toast.success('¡Conexión restablecida!');
+      } else {
+        toast.error('No se pudo conectar con el servidor');
+      }
+    } catch (error) {
+      console.error('Error al reintentar la conexión:', error);
+      setConnectionActive(false);
+      setConnectionError(true);
+      toast.error('Error al intentar conectar con el servidor');
+    } finally {
+      setCheckingConnection(false);
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email || !password) {
       toast.error('Por favor, introduce tu email y contraseña');
+      return;
+    }
+    
+    // Verificar primero si hay conexión con Supabase
+    if (!connectionActive) {
+      toast.error('No hay conexión con el servidor. Por favor, verifica tu conexión a internet e intenta nuevamente.');
       return;
     }
     
@@ -83,6 +134,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
         // Verificar si es un error de red o conectividad
         if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
           setConnectionError(true);
+          setConnectionActive(false);
           toast.error('Error de conexión. No se pudo conectar con el servidor.');
           console.error('Error de conexión con Supabase:', error);
         } else {
@@ -100,6 +152,12 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
   const resendConfirmationEmail = async () => {
     if (!email) {
       toast.error('Por favor, introduce tu email');
+      return;
+    }
+    
+    // Verificar primero si hay conexión con Supabase
+    if (!connectionActive) {
+      toast.error('No hay conexión con el servidor. Por favor, verifica tu conexión a internet e intenta nuevamente.');
       return;
     }
     
@@ -122,6 +180,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
         // Verificar si es un error de conexión
         if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
           setConnectionError(true);
+          setConnectionActive(false);
           toast.error('Error de conexión. No se pudo conectar con el servidor.');
         } else {
           toast.error(error.message);
@@ -136,17 +195,49 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
   
   // Función para iniciar sesión como invitado (sin confirmación)
   const handleGuestLogin = async () => {
+    // Verificar primero si hay conexión con Supabase
+    if (!connectionActive) {
+      toast.error('No hay conexión con el servidor. Por favor, verifica tu conexión a internet e intenta nuevamente.');
+      return;
+    }
+    
     try {
       setLoading(true);
       setConnectionError(false);
       
       console.log('Intentando iniciar sesión como invitado...');
       
+      // Usamos un usuario invitado fijo para evitar problemas
+      const guestEmail = "invitado@ahorrat.app";
+      const guestPassword = "AhorraT2025Guest!";
+      
+      // Primero verificamos si el usuario invitado ya existe
       try {
-        // Primero intentamos crear el usuario invitado si no existe
+        // Intento de iniciar sesión directamente
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: guestEmail,
+          password: guestPassword,
+        });
+        
+        if (!error) {
+          // Si no hay error, inicio de sesión exitoso
+          console.log('Inicio de sesión como invitado exitoso');
+          localStorage.setItem('isGuestUser', 'true');
+          toast.success('Has iniciado sesión como invitado');
+          onAuthenticated();
+          return;
+        }
+        
+        // Si hay error pero no es de credenciales inválidas, lanzamos el error
+        if (!error.message.includes('Invalid login credentials')) {
+          throw error;
+        }
+        
+        // Si llegamos aquí, el usuario no existe, así que lo creamos
+        console.log('El usuario invitado no existe, creándolo...');
         const { error: signUpError } = await supabase.auth.signUp({
-          email: "invitado@example.com",
-          password: "invitado123",
+          email: guestEmail,
+          password: guestPassword,
           options: {
             data: {
               name: 'Usuario Invitado',
@@ -156,37 +247,34 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
         });
         
         if (signUpError) {
-          // Ignoramos el error si el usuario ya existe
-          console.log('Error al crear usuario invitado (posiblemente ya existe):', signUpError.message);
-        } else {
-          console.log('Usuario invitado creado exitosamente');
+          console.error('Error al crear usuario invitado:', signUpError.message);
+          throw signUpError;
         }
+        
+        // Intentamos iniciar sesión después de crear el usuario
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: guestEmail,
+          password: guestPassword,
+        });
+        
+        if (loginError) {
+          console.error('Error al iniciar sesión después de crear usuario invitado:', loginError.message);
+          throw loginError;
+        }
+        
+        localStorage.setItem('isGuestUser', 'true');
+        toast.success('Has iniciado sesión como invitado');
+        onAuthenticated();
       } catch (error) {
-        // Ignoramos errores al crear el usuario, podría ya existir
-        console.log('Error capturado al crear usuario invitado:', error);
-      }
-      
-      // Intentamos iniciar sesión con el usuario invitado
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: "invitado@example.com",
-        password: "invitado123",
-      });
-      
-      if (error) {
-        console.error('Error al iniciar sesión como invitado:', error.message);
+        console.error('Error durante el flujo de inicio de sesión como invitado:', error);
         throw error;
       }
-      
-      // Almacenar en localStorage que este es un usuario invitado
-      localStorage.setItem('isGuestUser', 'true');
-      
-      toast.success('Has iniciado sesión como invitado');
-      onAuthenticated();
     } catch (error) {
       if (error instanceof Error) {
         // Verificar si es un error de conexión
         if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
           setConnectionError(true);
+          setConnectionActive(false);
           toast.error('Error de conexión. No se pudo conectar con el servidor.');
           console.error('Error de conexión con Supabase:', error);
         } else {
@@ -238,18 +326,47 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
           </ul>
         </div>
         
-        {/* Mostrar error de conexión si ocurre */}
-        {connectionError && (
+        {/* Estado de conexión */}
+        {(connectionError || !connectionActive) && (
           <div className="py-4 px-6 bg-red-50">
             <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <AlertCircle className="h-6 w-6 text-red-400" />
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-0.5">
+                  <WifiOff className="h-5 w-5 text-red-500" />
                 </div>
                 <div className="ml-3">
-                  <p className="text-base text-red-700">
-                    No se pudo conectar con el servidor de Supabase. Por favor, verifica tu conexión a internet e inténtalo de nuevo.
-                  </p>
+                  <h3 className="text-sm font-medium text-red-800">
+                    Problema de conexión detectado
+                  </h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>
+                      No se pudo conectar con el servidor de Supabase. Esto puede deberse a:
+                    </p>
+                    <ul className="list-disc pl-5 mt-1 space-y-1">
+                      <li>Conexión a internet inestable o interrumpida</li>
+                      <li>El servidor de Supabase podría estar temporalmente no disponible</li>
+                      <li>Problemas con las credenciales de acceso</li>
+                    </ul>
+                  </div>
+                  <div className="mt-3">
+                    <button
+                      onClick={retryConnection}
+                      disabled={checkingConnection}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      {checkingConnection ? (
+                        <>
+                          <RefreshCw className="animate-spin -ml-0.5 mr-2 h-4 w-4" />
+                          Verificando...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="-ml-0.5 mr-2 h-4 w-4" />
+                          Reintentar conexión
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -273,7 +390,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
             
             <button
               onClick={resendConfirmationEmail}
-              disabled={loading}
+              disabled={loading || !connectionActive}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
               {loading ? 'Procesando...' : 'Reenviar email de confirmación'}
@@ -334,7 +451,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
             <div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !connectionActive}
                 className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 {loading ? 'Procesando...' : isRegister ? (
@@ -362,7 +479,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
               <button
                 type="button"
                 onClick={handleGuestLogin}
-                disabled={loading}
+                disabled={loading || !connectionActive}
                 className="w-full flex justify-center py-3 px-4 border border-blue-300 rounded-lg shadow-sm text-base font-medium text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 Continuar como invitado
