@@ -4,12 +4,30 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL or anonymous key is missing from environment variables');
+  console.error('Supabase URL o clave anónima falta en las variables de entorno');
 }
 
 export const supabase = createClient(
   supabaseUrl || '',
-  supabaseAnonKey || ''
+  supabaseAnonKey || '',
+  {
+    auth: {
+      // Configuración para hacer las peticiones más robustas
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+    },
+    global: {
+      // Establecer un tiempo de espera para evitar bloqueos indefinidos
+      fetch: (url, options) => {
+        return fetch(url, { 
+          ...options, 
+          // Establecer un timeout para evitar que las peticiones se queden colgadas
+          signal: AbortSignal.timeout(30000) 
+        });
+      }
+    }
+  }
 );
 
 // Tipos para las tablas de la base de datos

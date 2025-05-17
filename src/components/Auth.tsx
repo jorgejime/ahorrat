@@ -13,6 +13,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [confirmationPending, setConfirmationPending] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +25,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
     
     try {
       setLoading(true);
+      setConnectionError(false);
       
       if (isRegister) {
         // Registrar un nuevo usuario
@@ -78,7 +80,14 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
       }
     } catch (error) {
       if (error instanceof Error) {
-        toast.error(error.message);
+        // Verificar si es un error de red o conectividad
+        if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
+          setConnectionError(true);
+          toast.error('Error de conexión. No se pudo conectar con el servidor.');
+          console.error('Error de conexión con Supabase:', error);
+        } else {
+          toast.error(error.message);
+        }
       } else {
         toast.error('Ha ocurrido un error');
       }
@@ -96,6 +105,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
     
     try {
       setLoading(true);
+      setConnectionError(false);
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: email,
@@ -109,7 +119,13 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
       toast.success('Email de confirmación reenviado');
     } catch (error) {
       if (error instanceof Error) {
-        toast.error(error.message);
+        // Verificar si es un error de conexión
+        if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
+          setConnectionError(true);
+          toast.error('Error de conexión. No se pudo conectar con el servidor.');
+        } else {
+          toast.error(error.message);
+        }
       } else {
         toast.error('Error al reenviar el email de confirmación');
       }
@@ -122,40 +138,43 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
   const handleGuestLogin = async () => {
     try {
       setLoading(true);
+      setConnectionError(false);
       
-      // Usar un acceso anónimo en lugar de crear un usuario
-      // Esto evita problemas con dominios de correo no válidos
+      console.log('Intentando iniciar sesión como invitado...');
+      
+      try {
+        // Primero intentamos crear el usuario invitado si no existe
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: "invitado@example.com",
+          password: "invitado123",
+          options: {
+            data: {
+              name: 'Usuario Invitado',
+              isGuest: true
+            }
+          }
+        });
+        
+        if (signUpError) {
+          // Ignoramos el error si el usuario ya existe
+          console.log('Error al crear usuario invitado (posiblemente ya existe):', signUpError.message);
+        } else {
+          console.log('Usuario invitado creado exitosamente');
+        }
+      } catch (error) {
+        // Ignoramos errores al crear el usuario, podría ya existir
+        console.log('Error capturado al crear usuario invitado:', error);
+      }
+      
+      // Intentamos iniciar sesión con el usuario invitado
       const { data, error } = await supabase.auth.signInWithPassword({
         email: "invitado@example.com",
         password: "invitado123",
       });
       
       if (error) {
-        // Si el usuario no existe, intentamos crearlo primero
-        if (error.message && (error.message.includes('Invalid login') || error.message.includes('Email not confirmed'))) {
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: "invitado@example.com",
-            password: "invitado123",
-            options: {
-              data: {
-                name: 'Usuario Invitado',
-                isGuest: true
-              }
-            }
-          });
-          
-          if (signUpError) throw signUpError;
-          
-          // Intentar iniciar sesión nuevamente
-          const { error: retryError } = await supabase.auth.signInWithPassword({
-            email: "invitado@example.com",
-            password: "invitado123",
-          });
-          
-          if (retryError) throw retryError;
-        } else {
-          throw error;
-        }
+        console.error('Error al iniciar sesión como invitado:', error.message);
+        throw error;
       }
       
       // Almacenar en localStorage que este es un usuario invitado
@@ -165,7 +184,14 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
       onAuthenticated();
     } catch (error) {
       if (error instanceof Error) {
-        toast.error(error.message);
+        // Verificar si es un error de conexión
+        if (error.message === 'Failed to fetch' || error.message.includes('network') || error.message.includes('Network')) {
+          setConnectionError(true);
+          toast.error('Error de conexión. No se pudo conectar con el servidor.');
+          console.error('Error de conexión con Supabase:', error);
+        } else {
+          toast.error(error.message);
+        }
       } else {
         toast.error('Ha ocurrido un error al iniciar sesión como invitado');
       }
@@ -211,6 +237,24 @@ const Auth: React.FC<AuthProps> = ({ onAuthenticated }) => {
             <li>Visualiza tu semana organizada y descarga tu planificación</li>
           </ul>
         </div>
+        
+        {/* Mostrar error de conexión si ocurre */}
+        {connectionError && (
+          <div className="py-4 px-6 bg-red-50">
+            <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <AlertCircle className="h-6 w-6 text-red-400" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-base text-red-700">
+                    No se pudo conectar con el servidor de Supabase. Por favor, verifica tu conexión a internet e inténtalo de nuevo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {confirmationPending ? (
           <div className="py-8 px-6 space-y-6">
